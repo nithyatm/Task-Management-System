@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kanban Board – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+renderLayout('Kanban Board', 'Drag and drop tasks to update their status', 'kanban');
+
+async function loadKanban() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="loading">Loading board...</div>';
+  try {
+    const tasks = await api.get('/tasks');
+    const columns = { todo: [], inprogress: [], done: [] };
+    tasks.forEach(t => { if (columns[t.status]) columns[t.status].push(t); });
+
+    content.innerHTML = `
+      <div class="kanban-board">
+        ${renderColumn('todo', 'To Do', columns.todo)}
+        ${renderColumn('inprogress', 'In Progress', columns.inprogress)}
+        ${renderColumn('done', 'Done', columns.done)}
+      </div>`;
+
+    ['todo', 'inprogress', 'done'].forEach(status => {
+      Sortable.create(document.getElementById(`col-${status}`), {
+        group: 'tasks',
+        animation: 150,
+        ghostClass: 'task-card-ghost',
+        dragClass: 'dragging',
+        onEnd: async (evt) => {
+          const taskId = evt.item.dataset.id;
+          const newStatus = evt.to.dataset.status;
+          if (evt.from !== evt.to) {
+            try {
+              await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
+              // Update count badges
+              ['todo','inprogress','done'].forEach(s => {
+                const col = document.getElementById(`col-${s}`);
+                document.getElementById(`count-${s}`).textContent = col.children.length;
+              });
+            } catch (e) { alert('Failed to update status: ' + e.message); loadKanban(); }
+          }
+        }
+      });
+    });
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state"><div class="icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+function renderColumn(status, title, tasks) {
+  const colClass = { todo: 'col-todo', inprogress: 'col-inprogress', done: 'col-done' };
+  const colIcon  = { todo: icon('list',15), inprogress: icon('zap',15), done: icon('check-circle',15) };
+  return `
+    <div class="kanban-column ${colClass[status]}">
+      <div class="kanban-column-header">
+        <h3>${colIcon[status]} ${title}</h3>
+        <span class="kanban-count" id="count-${status}">${tasks.length}</span>
+      </div>
+      <div id="col-${status}" data-status="${status}" style="min-height:100px">
+        ${tasks.map(t => renderCard(t)).join('')}
+        ${tasks.length === 0 ? `<div class="kanban-drop-zone" id="drop-${status}">Drop tasks here</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderCard(t) {
+  const initials = (t.assignee_name || '?').split(' ').map(w => w[0]).join('').toUpperCase();
+  const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.status !== 'done';
+  return `
+    <div class="task-card" data-id="${t.id}" data-priority="${t.priority}" onclick="viewTask(${t.id})">
+      <div class="task-card-title">${t.title}</div>
+      ${t.description ? `<div class="text-muted" style="font-size:12px;margin-bottom:6px">${t.description.substring(0, 80)}${t.description.length > 80 ? '...' : ''}</div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${priorityBadge(t.priority)}
+        ${t.tags ? t.tags.split(',').slice(0,2).map(g => `<span class="tag">${g.trim()}</span>`).join('') : ''}
+      </div>
+      <div class="task-card-meta">
+        <div class="task-card-assignee">
+          ${t.assignee_name ? `<div class="assignee-avatar">${initials}</div><span>${t.assignee_name.split(' ')[0]}</span>` : '<span>Unassigned</span>'}
+        </div>
+        <span style="color:${isOverdue ? '#e74c3c' : '#aaa'}">${t.due_date ? icon('calendar',12) + ' ' + formatDate(t.due_date) : ''}</span>
+      </div>
+      ${t.attachment_count > 0 || t.comment_count > 0 ? `
+        <div class="task-card-footer">
+          ${t.attachment_count > 0 ? `<span>${icon('paperclip',12)} ${t.attachment_count}</span>` : ''}
+          ${t.comment_count > 0 ? `<span>${icon('message-circle',12)} ${t.comment_count}</span>` : ''}
+        </div>` : ''}
+    </div>`;
+}
+
+function viewTask(id) {
+  event.stopPropagation();
+  window.location.href = `/pages/task-detail.html?id=${id}`;
+}
+
+loadKanban();
+</script>
+</body>
+</html>

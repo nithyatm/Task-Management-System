@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Task – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user    = getUser();
+const editId  = new URLSearchParams(window.location.search).get('edit');
+const isEdit  = !!editId;
+
+if (!['admin','task_manager'].includes(user.role)) {
+  window.location.href = '/pages/dashboard.html';
+}
+
+renderLayout(
+  isEdit ? 'Edit Task' : 'Create Task',
+  isEdit ? 'Modify task details' : 'Add a new task for your team',
+  'tasks'
+);
+
+async function init() {
+  const content = document.getElementById('page-content');
+
+  content.innerHTML = `
+    <div style="max-width:700px">
+      <div class="card">
+        <div class="card-header">
+          <h4>${isEdit ? icon('pencil',16) + ' Edit Task' : icon('plus',16) + ' New Task'}</h4>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>Task Title *</label>
+            <input type="text" id="taskTitle" placeholder="Enter a clear, descriptive title..." />
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="taskDesc" rows="4" placeholder="Describe what needs to be done..."></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label>Priority</label>
+              <select id="taskPriority">
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="taskStatus">
+                <option value="todo">To Do</option>
+                <option value="inprogress">In Progress</option>
+                <option value="done">Done</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label>Due Date</label>
+              <input type="date" id="taskDue" />
+            </div>
+            <div class="form-group">
+              <label>Assign To</label>
+              <select id="taskAssignee">
+                <option value="">— Unassigned —</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label>Team</label>
+              <select id="taskTeam">
+                <option value="">No Team</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Tags (comma-separated)</label>
+              <input type="text" id="taskTags" placeholder="frontend, bug, urgent" />
+            </div>
+          </div>
+          <div class="alert alert-error"   id="formErr"     style="display:none"></div>
+          <div class="alert alert-success" id="formSuccess" style="display:none"></div>
+          <div style="display:flex;gap:12px;margin-top:8px">
+            <button class="btn btn-primary" id="saveBtn" onclick="saveTask()">
+              ${icon('save',15)} ${isEdit ? 'Save Changes' : 'Create Task'}
+            </button>
+            <button class="btn btn-secondary" onclick="navigate('tasks')">
+              ${icon('x',15)} Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadUsers();
+  await loadTeams();
+  if (isEdit) await loadExisting();
+}
+
+async function loadUsers() {
+  try {
+    const users = await api.get('/users');
+    const sel = document.getElementById('taskAssignee');
+    users.forEach(u => {
+      sel.innerHTML += '<option value="' + u.id + '">' + u.name + ' (' + u.role.replace('_',' ') + ')</option>';
+    });
+  } catch(e) {}
+}
+
+async function loadTeams() {
+  try {
+    const teams = await api.get('/teams');
+    const sel = document.getElementById('taskTeam');
+    teams.forEach(t => {
+      sel.innerHTML += '<option value="' + t.id + '">' + t.name + '</option>';
+    });
+  } catch(e) {}
+}
+
+async function loadExisting() {
+  try {
+    const t = await api.get('/tasks/' + editId);
+    document.getElementById('taskTitle').value    = t.title || '';
+    document.getElementById('taskDesc').value     = t.description || '';
+    document.getElementById('taskPriority').value = t.priority || 'medium';
+    document.getElementById('taskStatus').value   = t.status || 'todo';
+    document.getElementById('taskDue').value      = t.due_date ? t.due_date.split('T')[0] : '';
+    document.getElementById('taskAssignee').value = t.assigned_to || '';
+    document.getElementById('taskTeam').value     = t.team_id || '';
+    document.getElementById('taskTags').value     = t.tags || '';
+  } catch(e) {
+    document.getElementById('formErr').textContent = 'Could not load task.';
+    document.getElementById('formErr').style.display = 'block';
+  }
+}
+
+async function saveTask() {
+  const errEl = document.getElementById('formErr');
+  const sucEl = document.getElementById('formSuccess');
+  const btn   = document.getElementById('saveBtn');
+  errEl.style.display = 'none';
+  sucEl.style.display = 'none';
+
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!title) {
+    errEl.textContent = 'Task title is required.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const payload = {
+    title,
+    description: document.getElementById('taskDesc').value.trim(),
+    priority:    document.getElementById('taskPriority').value,
+    status:      document.getElementById('taskStatus').value,
+    due_date:    document.getElementById('taskDue').value || null,
+    assigned_to: document.getElementById('taskAssignee').value || null,
+    team_id:     document.getElementById('taskTeam').value || null,
+    tags:        document.getElementById('taskTags').value.trim() || null,
+  };
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    if (isEdit) {
+      await api.put('/tasks/' + editId, payload);
+    } else {
+      await api.post('/tasks', payload);
+    }
+    sucEl.textContent = isEdit ? 'Task updated!' : 'Task created! Assignee will be notified.';
+    sucEl.style.display = 'block';
+    setTimeout(function(){ navigate('tasks'); }, 1000);
+  } catch(e) {
+    errEl.textContent = e.message || 'Failed to save.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = isEdit ? 'Save Changes' : 'Create Task';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

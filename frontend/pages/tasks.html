@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tasks – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+
+<!-- Create/Edit Task Modal -->
+<div class="modal-overlay" id="taskModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Create Task</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="taskId" />
+      <div class="form-group"><label>Title *</label><input type="text" id="taskTitle" placeholder="Task title" /></div>
+      <div class="form-group"><label>Description</label><textarea id="taskDesc" rows="3" placeholder="Describe the task..."></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group"><label>Priority</label>
+          <select id="taskPriority"><option value="high">High</option><option value="medium" selected>Medium</option><option value="low">Low</option></select>
+        </div>
+        <div class="form-group"><label>Due Date</label><input type="date" id="taskDueDate" /></div>
+      </div>
+      <div class="form-group"><label>Assign To</label>
+        <select id="taskAssignee"><option value="">— Unassigned —</option></select>
+      </div>
+      <div class="form-group"><label>Tags (comma-separated)</label><input type="text" id="taskTags" placeholder="design, frontend, bug" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTask()" id="saveBtn">Save Task</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+const canCreate = ['admin', 'task_manager'].includes(user.role);
+renderLayout('All Tasks', 'Manage and track all your tasks', 'tasks');
+
+let allUsers = [];
+
+async function init() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h4>${icon('check-square',15)} Task List</h4>
+        ${canCreate ? `<button class="btn btn-primary btn-sm" onclick="openCreate()">${icon('plus',14)} New Task</button>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="filters-row">
+          <div class="filter-group"><input type="text" id="searchInput" placeholder="Search tasks..." oninput="filterTasks()" /></div>
+          <div class="filter-group"><select id="filterStatus" onchange="filterTasks()">
+            <option value="">All Status</option><option value="todo">To Do</option>
+            <option value="inprogress">In Progress</option><option value="done">Done</option>
+          </select></div>
+          <div class="filter-group"><select id="filterPriority" onchange="filterTasks()">
+            <option value="">All Priority</option><option value="high">High</option>
+            <option value="medium">Medium</option><option value="low">Low</option>
+          </select></div>
+        </div>
+        <div class="table-wrapper"><div id="taskTableBody"><div class="loading">Loading tasks...</div></div></div>
+      </div>
+    </div>`;
+
+  if (canCreate) {
+    allUsers = await api.get('/users').catch(() => []);
+    const sel = document.getElementById('taskAssignee');
+    allUsers.forEach(u => sel.innerHTML += `<option value="${u.id}">${u.name}</option>`);
+  }
+  await loadTasks();
+}
+
+let tasks = [];
+async function loadTasks() {
+  tasks = await api.get('/tasks').catch(() => []);
+  renderTable(tasks);
+}
+
+function renderTable(data) {
+  const body = document.getElementById('taskTableBody');
+  if (data.length === 0) {
+    body.innerHTML = `<div class="empty-state"><p style="color:#94a3b8;text-align:center;padding:40px 0">No tasks found.</p></div>`; return;
+  }
+  body.innerHTML = `<table>
+    <thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>Due Date</th><th>Assignee</th><th>Attachments</th><th>Actions</th></tr></thead>
+    <tbody>${data.map(t => `
+      <tr>
+        <td><div class="task-title">${t.title}</div>${t.tags ? `<div class="mt-3">${t.tags.split(',').map(g => `<span class="tag">${g.trim()}</span>`).join(' ')}</div>` : ''}</td>
+        <td>${priorityBadge(t.priority)}</td>
+        <td>${statusBadge(t.status)}</td>
+        <td>${formatDate(t.due_date)}</td>
+        <td>${t.assignee_name || '—'}</td>
+        <td>${t.attachment_count > 0 ? `${icon('paperclip',13)} ${t.attachment_count}` : '—'}</td>
+        <td>
+          <div class="flex gap-2">
+            <button class="btn btn-sm btn-secondary" onclick="viewTask(${t.id})">${icon('eye',13)} View</button>
+            ${canCreate ? `<button class="btn btn-sm btn-secondary" onclick="openEdit(${t.id})">${icon('pencil',13)} Edit</button>` : ''}
+            ${user.role === 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteTask(${t.id})">${icon('trash-2',13)}</button>` : ''}
+          </div>
+        </td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function filterTasks() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const status = document.getElementById('filterStatus').value;
+  const priority = document.getElementById('filterPriority').value;
+  const filtered = tasks.filter(t =>
+    (!search || t.title.toLowerCase().includes(search) || (t.description || '').toLowerCase().includes(search)) &&
+    (!status || t.status === status) &&
+    (!priority || t.priority === priority)
+  );
+  renderTable(filtered);
+}
+
+function openCreate() {
+  document.getElementById('modalTitle').textContent = 'Create Task';
+  document.getElementById('taskId').value = '';
+  document.getElementById('taskTitle').value = '';
+  document.getElementById('taskDesc').value = '';
+  document.getElementById('taskPriority').value = 'medium';
+  document.getElementById('taskDueDate').value = '';
+  document.getElementById('taskAssignee').value = '';
+  document.getElementById('taskTags').value = '';
+  document.getElementById('taskModal').classList.add('open');
+}
+
+function openEdit(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('modalTitle').textContent = 'Edit Task';
+  document.getElementById('taskId').value = t.id;
+  document.getElementById('taskTitle').value = t.title;
+  document.getElementById('taskDesc').value = t.description || '';
+  document.getElementById('taskPriority').value = t.priority;
+  document.getElementById('taskDueDate').value = t.due_date ? t.due_date.split('T')[0] : '';
+  document.getElementById('taskAssignee').value = t.assigned_to || '';
+  document.getElementById('taskTags').value = t.tags || '';
+  document.getElementById('taskModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('taskModal').classList.remove('open'); }
+
+async function saveTask() {
+  const id = document.getElementById('taskId').value;
+  const payload = {
+    title: document.getElementById('taskTitle').value.trim(),
+    description: document.getElementById('taskDesc').value.trim(),
+    priority: document.getElementById('taskPriority').value,
+    due_date: document.getElementById('taskDueDate').value || null,
+    assigned_to: document.getElementById('taskAssignee').value || null,
+    tags: document.getElementById('taskTags').value.trim()
+  };
+  if (!payload.title) { alert('Title is required'); return; }
+  const btn = document.getElementById('saveBtn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  try {
+    if (id) await api.put(`/tasks/${id}`, payload);
+    else await api.post('/tasks', payload);
+    closeModal(); await loadTasks();
+  } catch (e) { alert(e.message); }
+  btn.textContent = 'Save Task'; btn.disabled = false;
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task? This cannot be undone.')) return;
+  try { await api.delete(`/tasks/${id}`); await loadTasks(); }
+  catch (e) { alert(e.message); }
+}
+
+function viewTask(id) { window.location.href = `/pages/task-detail.html?id=${id}`; }
+
+init();
+</script>
+</body>
+</html>

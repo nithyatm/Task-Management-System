@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+
+<!-- Edit User Modal -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Edit User</h3><button class="modal-close" onclick="closeUserModal()">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="editUserId" />
+      <div class="form-group"><label>Name</label><input type="text" id="editName" /></div>
+      <div class="form-group"><label>Role</label>
+        <select id="editRole"><option value="admin">Admin</option><option value="task_manager">Task Manager</option><option value="viewer">Viewer</option></select>
+      </div>
+      <div class="form-group"><label>Status</label>
+        <select id="editActive"><option value="1">Active</option><option value="0">Deactivated</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeUserModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+if (user.role !== 'admin') window.location.href = '/pages/dashboard.html';
+renderLayout('Admin Dashboard', 'Manage users, teams and all tasks', 'users');
+
+async function init() {
+  const content = document.getElementById('page-content');
+  try {
+    const [tasks, users] = await Promise.all([api.get('/tasks'), api.get('/users')]);
+    const total = tasks.length, todo = tasks.filter(t=>t.status==='todo').length;
+    const inprogress = tasks.filter(t=>t.status==='inprogress').length, done = tasks.filter(t=>t.status==='done').length;
+
+    content.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card blue"><div class="stat-icon">${icon('users',24)}</div><div class="stat-info"><p>Total Users</p><h2>${users.length}</h2></div></div>
+        <div class="stat-card blue"><div class="stat-icon">${icon('clipboard-list',24)}</div><div class="stat-info"><p>Total Tasks</p><h2>${total}</h2></div></div>
+        <div class="stat-card orange"><div class="stat-icon">${icon('zap',24)}</div><div class="stat-info"><p>In Progress</p><h2>${inprogress}</h2></div></div>
+        <div class="stat-card green"><div class="stat-icon">${icon('check-circle',24)}</div><div class="stat-info"><p>Completed</p><h2>${done}</h2></div></div>
+      </div>
+
+      <!-- User Management -->
+      <div class="card">
+        <div class="card-header">
+          <h4>${icon('users',15)} User Management</h4>
+          <button class="btn btn-primary btn-sm" onclick="navigate('tasks')">+ Create Task</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${users.map(u => `
+                <tr>
+                  <td><strong>${u.name}</strong></td>
+                  <td>${u.email}</td>
+                  <td>${u.role.replace('_',' ')}</td>
+                  <td><span class="badge ${u.is_active ? 'badge-done' : 'badge-high'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td>${formatDate(u.created_at)}</td>
+                  <td>
+                    <div class="flex gap-2">
+                      <button class="btn btn-sm btn-secondary" onclick='openEditUser(${JSON.stringify(u)})'>${icon('pencil',13)} Edit</button>
+                      ${u.id !== user.id ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">${icon('trash-2',13)}</button>` : ''}
+                    </div>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- All Tasks -->
+      <div class="card">
+        <div class="card-header"><h4>${icon('clipboard-list',15)} All Tasks</h4><button class="btn btn-secondary btn-sm" onclick="navigate('tasks')">Manage →</button></div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Title</th><th>Priority</th><th>Status</th><th>Assigned To</th><th>Due Date</th><th>Action</th></tr></thead>
+            <tbody>
+              ${tasks.slice(0,10).map(t => `
+                <tr>
+                  <td class="task-title">${t.title}</td>
+                  <td>${priorityBadge(t.priority)}</td>
+                  <td>${statusBadge(t.status)}</td>
+                  <td>${t.assignee_name||'—'}</td>
+                  <td>${formatDate(t.due_date)}</td>
+                  <td><button class="btn btn-sm btn-secondary" onclick="window.location='/pages/task-detail.html?id=${t.id}'">View</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`;
+  }
+}
+
+function openEditUser(u) {
+  document.getElementById('editUserId').value = u.id;
+  document.getElementById('editName').value = u.name;
+  document.getElementById('editRole').value = u.role;
+  document.getElementById('editActive').value = u.is_active;
+  document.getElementById('userModal').classList.add('open');
+}
+function closeUserModal() { document.getElementById('userModal').classList.remove('open'); }
+
+async function saveUser() {
+  const id = document.getElementById('editUserId').value;
+  const name = document.getElementById('editName').value;
+  const role = document.getElementById('editRole').value;
+  const is_active = document.getElementById('editActive').value;
+  try { await api.put(`/users/${id}`, { name, role, is_active }); closeUserModal(); init(); }
+  catch (e) { alert(e.message); }
+}
+
+async function deleteUser(id) {
+  if (!confirm('Delete this user? All their tasks will be affected.')) return;
+  try { await api.delete(`/users/${id}`); init(); }
+  catch (e) { alert(e.message); }
+}
+
+init();
+</script>
+</body>
+</html>

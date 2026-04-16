@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+renderLayout('Dashboard', `Welcome back, ${user.name}!`, 'dashboard');
+
+async function loadDashboard() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="loading">Loading dashboard...</div>';
+  try {
+    const tasks = await api.get('/tasks');
+    const total = tasks.length;
+    const todo = tasks.filter(t => t.status === 'todo').length;
+    const inprogress = tasks.filter(t => t.status === 'inprogress').length;
+    const done = tasks.filter(t => t.status === 'done').length;
+    const today = new Date().toISOString().split('T')[0];
+    const overdue = tasks.filter(t => t.due_date && t.due_date.split('T')[0] < today && t.status !== 'done').length;
+
+    const recent = tasks.slice(0, 8);
+    content.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card blue"><div class="stat-icon">${icon('clipboard-list',24)}</div><div class="stat-info"><p>Total Tasks</p><h2>${total}</h2></div></div>
+        <div class="stat-card blue"><div class="stat-icon">${icon('list',24)}</div><div class="stat-info"><p>To Do</p><h2>${todo}</h2></div></div>
+        <div class="stat-card orange"><div class="stat-icon">${icon('zap',24)}</div><div class="stat-info"><p>In Progress</p><h2>${inprogress}</h2></div></div>
+        <div class="stat-card green"><div class="stat-icon">${icon('check-circle',24)}</div><div class="stat-info"><p>Completed</p><h2>${done}</h2></div></div>
+        <div class="stat-card red"><div class="stat-icon">${icon('alert-circle',24)}</div><div class="stat-info"><p>Overdue</p><h2>${overdue}</h2></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h4>${icon('clipboard-list',15)} Recent Tasks</h4>
+          <button class="btn btn-secondary btn-sm" onclick="navigate('tasks')">View All →</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Task</th><th>Priority</th><th>Status</th><th>Due Date</th><th>Assigned To</th><th>Action</th></tr></thead>
+            <tbody>
+              ${recent.length === 0 ? '<tr><td colspan="6" class="text-center text-muted" style="padding:32px">No tasks yet.</td></tr>' :
+                recent.map(t => `
+                  <tr>
+                    <td><div class="task-title">${t.title}</div></td>
+                    <td>${priorityBadge(t.priority)}</td>
+                    <td>${statusBadge(t.status)}</td>
+                    <td>${formatDate(t.due_date)}</td>
+                    <td>${t.assignee_name || '—'}</td>
+                    <td><button class="btn btn-sm btn-secondary" onclick="viewTask(${t.id})">${icon('eye',13)} View</button></td>
+                  </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state"><div class="icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+function viewTask(id) { window.location.href = `/pages/task-detail.html?id=${id}`; }
+loadDashboard();
+</script>
+</body>
+</html>

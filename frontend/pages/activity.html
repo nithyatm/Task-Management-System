@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Activity Log – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+renderLayout('Activity Log', 'Complete history of all actions in your workspace', 'activity');
+
+const actionIcons = { created:icon('plus',14), updated:icon('pencil',14), deleted:icon('trash-2',14), status_changed:icon('refresh-cw',14), commented:icon('message-circle',14), attachment_added:icon('paperclip',14), assigned:icon('user-check',14) };
+
+async function loadActivity() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="loading">Loading activity...</div>';
+  try {
+    const logs = await api.get('/tasks/logs');
+    content.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h4>${icon('activity',15)} Activity Log (${logs.length} entries)</h4>
+          <input type="text" placeholder="Filter activity..." oninput="filterLogs(this.value, logs)" id="logFilter"
+            style="padding:8px 14px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none" />
+        </div>
+        <div class="card-body" style="padding:0">
+          <ul class="activity-list" id="logList" style="padding:0 24px">
+            ${renderLogs(logs)}
+          </ul>
+        </div>
+      </div>`;
+    window._logs = logs;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state"><div class="icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+function renderLogs(logs) {
+  if (logs.length === 0) return '<li class="empty-state"><div class="icon">📭</div><p>No activity found.</p></li>';
+  return logs.map(log => `
+    <li class="activity-item">
+      <div class="activity-dot"></div>
+      <div class="activity-content" style="flex:1">
+        <p>
+          <strong>${actionIcons[log.action] || '•'} ${log.user_name}</strong>
+          ${log.description || log.action}
+          ${log.task_title ? `<span style="color:#2E75B6;font-weight:600"> on "${log.task_title}"</span>` : ''}
+        </p>
+        <span>${new Date(log.created_at).toLocaleString()}</span>
+      </div>
+    </li>`).join('');
+}
+
+function filterLogs(q, logs) {
+  const filtered = !q ? logs : logs.filter(l =>
+    (l.user_name||'').toLowerCase().includes(q.toLowerCase()) ||
+    (l.description||'').toLowerCase().includes(q.toLowerCase()) ||
+    (l.task_title||'').toLowerCase().includes(q.toLowerCase())
+  );
+  document.getElementById('logList').innerHTML = renderLogs(filtered);
+}
+
+loadActivity();
+</script>
+</body>
+</html>

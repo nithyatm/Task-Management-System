@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Detail – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+const taskId = new URLSearchParams(window.location.search).get('id');
+if (!taskId) window.location.href = '/pages/tasks.html';
+
+renderLayout('Task Detail', 'View task details, attachments and comments', 'tasks');
+
+async function loadTask() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="loading">Loading task...</div>';
+  try {
+    const t = await api.get(`/tasks/${taskId}`);
+    const canEdit = ['admin','task_manager'].includes(user.role) || t.created_by === user.id || t.assigned_to === user.id;
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:24px">
+        <div>
+          <!-- Task Header -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h4>${t.title}</h4>
+                <div class="flex gap-2 mt-3">${priorityBadge(t.priority)} ${statusBadge(t.status)}</div>
+              </div>
+              ${canEdit ? `
+              <div class="flex gap-2">
+                <select class="form-group" onchange="changeStatus(this.value)" style="padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px">
+                  <option value="todo" ${t.status==='todo'?'selected':''}>📋 To Do</option>
+                  <option value="inprogress" ${t.status==='inprogress'?'selected':''}>⚡ In Progress</option>
+                  <option value="done" ${t.status==='done'?'selected':''}>✅ Done</option>
+                </select>
+              </div>` : ''}
+            </div>
+            <div class="card-body">
+              <p style="color:#555;line-height:1.7">${t.description || '<em style="color:#aaa">No description provided</em>'}</p>
+              ${t.tags ? `<div class="mt-4">${t.tags.split(',').map(g=>`<span class="tag">${g.trim()}</span>`).join(' ')}</div>` : ''}
+              <div class="divider"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+                <div><p class="text-muted">${icon('calendar',13)} Due Date</p><p style="font-weight:600">${formatDate(t.due_date)}</p></div>
+                <div><p class="text-muted">${icon('user',13)} Assigned To</p><p style="font-weight:600">${t.assignee_name||'Unassigned'}</p></div>
+                <div><p class="text-muted">${icon('user-check',13)} Created By</p><p style="font-weight:600">${t.creator_name}</p></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Comments -->
+          <div class="card">
+            <div class="card-header"><h4>${icon('message-circle',15)} Comments (${t.comments.length})</h4></div>
+            <div class="card-body">
+              <div class="comment-list">${t.comments.length === 0 ? '<p class="text-muted text-center">No comments yet. Be the first!</p>' :
+                t.comments.map(c => `
+                  <div class="comment-item">
+                    <div class="comment-avatar">${c.author.charAt(0).toUpperCase()}</div>
+                    <div class="comment-body">
+                      <div class="author">${c.author}</div>
+                      <div class="text">${c.comment_text}</div>
+                      <div class="time">${timeAgo(c.created_at)}</div>
+                    </div>
+                  </div>`).join('')}
+              </div>
+              <div class="comment-input-row">
+                <input type="text" id="commentInput" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addComment()" />
+                <button class="btn btn-primary btn-sm" onclick="addComment()">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div>
+          <!-- Attachments -->
+          <div class="card">
+            <div class="card-header"><h4>${icon('paperclip',15)} Attachments (${t.attachments.length})</h4></div>
+            <div class="card-body">
+              <div class="file-upload-area" onclick="document.getElementById('fileInput').click()" id="dropArea">
+                ${icon('upload',32)}
+                <p>Click or drag files here</p>
+                <p style="font-size:12px;color:#bbb">Max 10MB · PDF, DOC, IMG, ZIP</p>
+              </div>
+              <input type="file" id="fileInput" style="display:none" onchange="uploadFile(this.files[0])" />
+              <div class="attachment-list" id="attachmentList">
+                ${t.attachments.map(a => `
+                  <div class="attachment-item">
+                    <span class="file-icon">${fileIcon(a.file_type)}</span>
+                    <div class="attachment-info" style="flex:1;min-width:0">
+                      <p style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.file_name}</p>
+                      <span>${a.uploader} · ${timeAgo(a.uploaded_at)}</span>
+                    </div>
+                    <a href="/${a.file_path}" download class="btn btn-icon">${icon('upload',14)}</a>
+                  </div>`).join('')}
+              </div>
+            </div>
+          </div>
+
+          <!-- Activity Log -->
+          <div class="card">
+            <div class="card-header"><h4>${icon('activity',15)} Activity</h4></div>
+            <div class="card-body" style="padding:16px 20px">
+              <ul class="activity-list">
+                ${t.activity_logs.length === 0 ? '<li class="text-muted text-center">No activity yet</li>' :
+                  t.activity_logs.slice(0,10).map(log => `
+                    <li class="activity-item">
+                      <div class="activity-dot"></div>
+                      <div class="activity-content">
+                        <p><strong>${log.user_name}</strong> ${log.description || log.action}</p>
+                        <span>${timeAgo(log.created_at)}</span>
+                      </div>
+                    </li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    // Drag & drop upload
+    const dropArea = document.getElementById('dropArea');
+    dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+    dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+    dropArea.addEventListener('drop', e => { e.preventDefault(); dropArea.classList.remove('drag-over'); if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state"><div class="icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+async function changeStatus(status) {
+  try { await api.patch(`/tasks/${taskId}/status`, { status }); loadTask(); }
+  catch (e) { alert(e.message); }
+}
+
+async function addComment() {
+  const input = document.getElementById('commentInput');
+  const text = input.value.trim();
+  if (!text) return;
+  try { await api.post(`/tasks/${taskId}/comments`, { comment_text: text }); input.value = ''; loadTask(); }
+  catch (e) { alert(e.message); }
+}
+
+async function uploadFile(file) {
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try { await api.upload(`/tasks/${taskId}/attachments`, fd); loadTask(); }
+  catch (e) { alert('Upload failed: ' + e.message); }
+}
+
+loadTask();
+</script>
+</body>
+</html>

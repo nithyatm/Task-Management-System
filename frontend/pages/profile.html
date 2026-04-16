@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+renderLayout('My Profile', 'Manage your account settings', 'profile');
+
+document.getElementById('page-content').innerHTML = `
+  <div style="max-width:560px;margin:0 auto">
+    <div class="card">
+      <div class="card-header"><h4>${icon('user',15)} Profile Information</h4></div>
+      <div class="card-body">
+        <div style="display:flex;align-items:center;gap:20px;margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #eee">
+          <div style="width:72px;height:72px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white">
+            ${user.name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <h3 style="font-size:20px">${user.name}</h3>
+            <p style="color:#777">${user.email}</p>
+            <span class="badge badge-todo" style="margin-top:6px;display:inline-block">${user.role.replace('_',' ')}</span>
+          </div>
+        </div>
+        <p class="text-muted">To update your name or email, contact your administrator.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h4>${icon('lock',15)} Change Password</h4></div>
+      <div class="card-body">
+        <div class="alert alert-error" id="pwErr"></div>
+        <div class="alert alert-success" id="pwSuccess"></div>
+        <div class="form-group"><label>Current Password</label><input type="password" id="curPw" /></div>
+        <div class="form-group"><label>New Password</label><input type="password" id="newPw" /></div>
+        <div class="form-group"><label>Confirm New Password</label><input type="password" id="conPw" /></div>
+        <button class="btn btn-primary" onclick="changePass()">${icon('lock',14)} Update Password</button>
+      </div>
+    </div>
+  </div>`;
+
+async function changePass() {
+  const cur = document.getElementById('curPw').value;
+  const nw = document.getElementById('newPw').value;
+  const con = document.getElementById('conPw').value;
+  const err = document.getElementById('pwErr');
+  const succ = document.getElementById('pwSuccess');
+  err.style.display = 'none'; succ.style.display = 'none';
+  if (!cur || !nw || !con) { err.textContent = 'All fields required'; err.style.display = 'block'; return; }
+  if (nw !== con) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+  if (nw.length < 6) { err.textContent = 'Min 6 characters'; err.style.display = 'block'; return; }
+  try {
+    await api.put('/auth/change-password', { currentPassword: cur, newPassword: nw });
+    succ.textContent = 'Password updated successfully!'; succ.style.display = 'block';
+    document.getElementById('curPw').value = '';
+    document.getElementById('newPw').value = '';
+    document.getElementById('conPw').value = '';
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teams – TaskFlow Pro</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-layout" id="app-layout"></div>
+<div class="modal-overlay" id="teamModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Create Team</h3><button class="modal-close" onclick="document.getElementById('teamModal').classList.remove('open')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Team Name *</label><input type="text" id="teamName" placeholder="e.g. Design Team" /></div>
+      <div class="form-group"><label>Description</label><textarea id="teamDesc" rows="3" placeholder="What does this team work on?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('teamModal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="createTeam()">✅ Create Team</button>
+    </div>
+  </div>
+</div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/icons.js"></script>
+<script src="/assets/js/layout.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+const canManage = ['admin','task_manager'].includes(user.role);
+renderLayout('Teams', 'Manage your teams and members', 'teams');
+
+async function loadTeams() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="loading">Loading teams...</div>';
+  try {
+    const teams = await api.get('/teams');
+    content.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h4>🏢 Teams (${teams.length})</h4>
+          ${canManage ? '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'teamModal\').classList.add(\'open\')">+ New Team</button>' : ''}
+        </div>
+        <div class="card-body">
+          ${teams.length === 0 ? '<div class="empty-state"><div class="icon">🏢</div><p>No teams yet. Create your first team!</p></div>' :
+            `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px">
+              ${teams.map(t => `
+                <div class="card" style="margin:0;cursor:pointer" onclick="viewTeam(${t.id})">
+                  <div class="card-body">
+                    <div style="font-size:32px;margin-bottom:12px">🏢</div>
+                    <h4 style="font-size:16px;margin-bottom:6px">${t.name}</h4>
+                    <p class="text-muted">${t.description || 'No description'}</p>
+                    <div class="divider"></div>
+                    <div class="flex gap-2 text-muted">
+                      <span>👥 ${t.member_count} members</span>
+                      <span>· By ${t.creator_name}</span>
+                    </div>
+                  </div>
+                </div>`).join('')}
+            </div>`}
+        </div>
+      </div>`;
+  } catch(e) {
+    content.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`;
+  }
+}
+
+async function createTeam() {
+  const name = document.getElementById('teamName').value.trim();
+  const description = document.getElementById('teamDesc').value.trim();
+  if (!name) { alert('Team name required'); return; }
+  try {
+    await api.post('/teams', { name, description });
+    document.getElementById('teamModal').classList.remove('open');
+    loadTeams();
+  } catch(e) { alert(e.message); }
+}
+
+function viewTeam(id) { window.location.href = `/pages/team-detail.html?id=${id}`; }
+loadTeams();
+</script>
+</body>
+</html>
